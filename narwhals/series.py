@@ -22,7 +22,7 @@ class Series:
     """
     Narwhals Series, backed by a native series.
 
-    The native dataframe might be pandas.Series, polars.Series, ...
+    The native series might be pandas.Series, polars.Series, ...
 
     This class is not meant to be instantiated directly - instead, use
     `narwhals.from_native`, making sure to pass `allow_series=True` or
@@ -84,6 +84,45 @@ class Series:
             raise ModuleNotFoundError(msg)
         ca = pa.chunked_array([self.to_arrow()])
         return ca.__arrow_c_stream__(requested_schema=requested_schema)
+
+    def to_native(self) -> Any:
+        """
+        Convert Narwhals series to native series.
+
+        Returns:
+            Series of class that user started with.
+
+        Examples:
+            >>> import pandas as pd
+            >>> import polars as pl
+            >>> import narwhals as nw
+            >>> s = [1, 2, 3]
+            >>> s_pd = pd.Series(s)
+            >>> s_pl = pl.Series(s)
+
+            We define a library agnostic function:
+
+            >>> @nw.narwhalify
+            ... def func(s):
+            ...     return s.to_native()
+
+            We can then pass either pandas or Polars to `func`:
+
+            >>> func(s_pd)
+            0    1
+            1    2
+            2    3
+            dtype: int64
+            >>> func(s_pl)  # doctest: +NORMALIZE_WHITESPACE
+            shape: (3,)
+            Series: '' [i64]
+            [
+                1
+                2
+                3
+            ]
+        """
+        return self._compliant_series._native_series
 
     def scatter(self, indices: int | Sequence[int], values: Any) -> Self:
         """
@@ -217,14 +256,14 @@ class Series:
         return function(self, *args, **kwargs)
 
     def __repr__(self) -> str:  # pragma: no cover
-        header = " Narwhals Series                                 "
+        header = " Narwhals Series                         "
         length = len(header)
         return (
             "┌"
             + "─" * length
             + "┐\n"
             + f"|{header}|\n"
-            + "| Use `narwhals.to_native()` to see native output |\n"
+            + "| Use `.to_native()` to see native output |\n"
             + "└"
             + "─" * length
             + "┘"
@@ -2427,6 +2466,49 @@ class SeriesCatNamespace:
 class SeriesStringNamespace:
     def __init__(self, series: Series) -> None:
         self._narwhals_series = series
+
+    def len_chars(self) -> Series:
+        r"""
+        Return the length of each string as the number of characters.
+
+        Examples:
+            >>> import pandas as pd
+            >>> import polars as pl
+            >>> import narwhals as nw
+            >>> data = ["foo", "Café", "345", "東京", None]
+            >>> s_pd = pd.Series(data)
+            >>> s_pl = pl.Series(data)
+
+            We define a dataframe-agnostic function:
+
+            >>> @nw.narwhalify
+            ... def func(s):
+            ...     return s.str.len_chars()
+
+            We can then pass either pandas or Polars to `func`:
+
+            >>> func(s_pd)
+            0    3.0
+            1    4.0
+            2    3.0
+            3    2.0
+            4    NaN
+            dtype: float64
+
+            >>> func(s_pl)  # doctest: +NORMALIZE_WHITESPACE
+            shape: (5,)
+            Series: '' [u32]
+            [
+               3
+               4
+               3
+               2
+               null
+            ]
+        """
+        return self._narwhals_series._from_compliant_series(
+            self._narwhals_series._compliant_series.str.len_chars()
+        )
 
     def replace(
         self, pattern: str, value: str, *, literal: bool = False, n: int = 1
